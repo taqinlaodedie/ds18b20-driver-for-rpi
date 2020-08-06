@@ -1,1 +1,0 @@
-cmd_/home/zyx/Desktop/drivers/ds18b20/ds18b20.ko := arm-linux-gnueabihf-ld -r  -EL  --build-id  -T ./scripts/module-common.lds -T ./arch/arm/kernel/module.lds -o /home/zyx/Desktop/drivers/ds18b20/ds18b20.ko /home/zyx/Desktop/drivers/ds18b20/ds18b20.o /home/zyx/Desktop/drivers/ds18b20/ds18b20.mod.o;  true
