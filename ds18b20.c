@@ -13,11 +13,13 @@
 #include <linux/device.h>   
 
 
-#define BCM_GPIO_BASE           0x3F200000  /* Physical memory of  GPIO */
-#define BCM_GPIO_FSEL2_OFFSET   0x8         /* GPIO function select register*/
-#define BCM_GPIO_SET0_OFFSET    0x1C        /* GPIO set register */
-#define BCM_GPIO_CLR0_OFFSET    0x28        /* GPIO clear register */
-#define BCM_GPIO_PLEV0_OFFSET   0x34        /* GPIO pin level register */
+// #define BCM_GPIO_BASE           0x3F200000  /* Physical memory of  GPIO */
+// #define BCM_GPIO_FSEL0_OFFSET   0x0         /* GPIO function select register*/
+// #define BCM_GPIO_SET0_OFFSET    0x1C        /* GPIO set register */
+// #define BCM_GPIO_CLR0_OFFSET    0x28        /* GPIO clear register */
+// #define BCM_GPIO_PLEV0_OFFSET   0x34        /* GPIO pin level register */
+
+#define DQ_IO   4
 
 /* Major minor numbers */
 static int ds18b20_major = 0;  
@@ -30,17 +32,15 @@ static struct ds18b20_device {
 };
 
 struct ds18b20_device *ds18b20_devp;
-
 static struct class *ds18b20_class;  
 static struct device *ds18b20_class_dev;  
-
-static void *gpio = 0;
 
 /* Declarations of functions */
 static void ds18b20_dat_input(void);
 static void ds18b20_dat_output(void);
-static int ds18b20_read_bit(void);
-static void ds18b20_write_bit(int val);
+static unsigned ds18b20_read_DQ(void);
+static void ds18b20_write_DQ(unsigned val);
+static unsigned ds18b20_read_bit(void);
 static int ds18b20_open(struct inode *inode, struct file *filp);  
 static int ds18b20_init(void);  
 static void ds18b20_write_byte(unsigned char data);  
@@ -69,21 +69,21 @@ static int ds18b20_init(void)
   
     /* Reset module */
     ds18b20_dat_output();  
-    ds18b20_write_bit(1);  
+    ds18b20_write_DQ(1);  
     udelay(2);  
-    ds18b20_write_bit(0);  
+    ds18b20_write_DQ(0);  
     udelay(500);  
-    ds18b20_write_bit(1); 
-    udelay(60);  
+    ds18b20_write_DQ(1); 
+    udelay(40);  
   
     /* Chek result of reset */  
     ds18b20_dat_input();  
-    retval = ds18b20_read_bit();  
+    retval = ds18b20_read_DQ();  
   
     /* Release module */
     udelay(500);  
     ds18b20_dat_output();   
-    ds18b20_write_bit(1);
+    ds18b20_write_DQ(1);
   
     return retval;  
 }  
@@ -91,89 +91,77 @@ static int ds18b20_init(void)
 /* Write a byte to ds18b20 */
 static void ds18b20_write_byte(unsigned char data)  
 {  
-    int i = 0;  
-  
-    ds18b20_dat_output();  
-  
-    for (i = 0; i < 8; i++) {  
-        /* Write a bit when level is from high to low */
-        ds18b20_write_bit(1);  
-        udelay(2);  
-        ds18b20_write_bit(0);  
-        ds18b20_write_bit(data & 0x01);  
-        udelay(60);  
-        data >>= 1;  
-    }  
-    ds18b20_write_bit(1); /* Release */ 
+    unsigned j, testb;
+    ds18b20_dat_output();
+    for (j = 1; j <= 8; j++) 
+    {
+        testb = data & 0x01;
+        data = data >> 1;
+        if (testb) {
+            ds18b20_write_DQ(0);// Write 1
+            udelay(2);                            
+            ds18b20_write_DQ(1);
+            udelay(60);             
+        }
+        else {
+            ds18b20_write_DQ(0);// Write 1
+            udelay(60);                            
+            ds18b20_write_DQ(1);
+            udelay(2);                        
+        }
+    }
 }  
 
 /* Read a byte from ds18b20 */
 static unsigned char ds18b20_read_byte(void)  
 {  
-    int i;  
-    unsigned char data = 0;  
-
-    ds18b20_dat_output(); 
- 
-    for (i = 0; i < 8; i++) {  
-        ds18b20_write_bit(1);  
-        udelay(2);  
-        ds18b20_write_bit(0);  
-        udelay(2);  
-        ds18b20_write_bit(1);  
-        udelay(8);  
-        data >>= 1;  
-        ds18b20_dat_input(); 
-        if (ds18b20_read_bit())  
-            data |= 0x80;  
-        udelay(50);  
-    }  
-    ds18b20_dat_output();   
-    ds18b20_write_bit(1);
-
-    return data;  
+    unsigned i, j, dat;
+    dat = 0;
+    for (i = 1; i <= 8; i++) {
+        j = ds18b20_read_bit();
+        dat = (j << 7) | (dat >> 1);
+    }						    
+    return dat;
 }  
 
 static void ds18b20_dat_input(void)
 {
-    int val;
-
-    /* Set pin27 as input */
-    val = ioread32(gpio + BCM_GPIO_FSEL2_OFFSET);
-    val &= ~(7 << 21);
-    iowrite32(val, gpio + BCM_GPIO_FSEL2_OFFSET);
+    gpio_direction_input(DQ_IO);
 }
 
 static void ds18b20_dat_output(void)
 {
-    int val;
-
-    /* Set pin27 as output */
-    val = ioread32(gpio + BCM_GPIO_FSEL2_OFFSET);
-    val &= ~(7 << 21);
-    val |= (1 << 21);
-    iowrite32(val, gpio + BCM_GPIO_FSEL2_OFFSET);
+    gpio_direction_output(DQ_IO, 1);
 }
 
-static int ds18b20_read_bit(void)
+static unsigned ds18b20_read_DQ(void)
 {
-    int val;
-
-    /* Read pin 27 */
-    val = ioread32(gpio + BCM_GPIO_PLEV0_OFFSET);
-    val &= (1 << 27);
-    val = val >> 27;
-
-    return val;
+    return gpio_get_value(DQ_IO);
 }
 
-static void ds18b20_write_bit(int val)
+static void ds18b20_write_DQ(unsigned val)
 {
-    /* write pin 27 */
-    if (val == 1)
-        iowrite32(1 << 27, gpio + BCM_GPIO_SET0_OFFSET);
-    else
-        iowrite32(1 << 27, gpio + BCM_GPIO_CLR0_OFFSET);
+    gpio_set_value(DQ_IO, val);
+}
+
+static unsigned ds18b20_read_bit(void)
+{
+    unsigned data;
+
+    ds18b20_dat_output();
+    ds18b20_write_DQ(0);
+    udelay(2);
+    ds18b20_write_DQ(1);
+    ds18b20_dat_input();
+    udelay(12);
+    if (ds18b20_read_DQ())
+        data=1;
+    else 
+        data=0;	 
+    udelay(50); 
+
+    return data;
+    
 }
 
 /* Read to user */
@@ -232,7 +220,12 @@ static int __init ds18b20_dev_init(void)
     int result;  
     dev_t dev = 0;  
 
-    gpio = ioremap(BCM_GPIO_BASE, 0xB0);
+    // gpio = ioremap(BCM_GPIO_BASE, 0xB0);
+    result = gpio_request(DQ_IO, "ds18b20_DQ");
+    if (result < 0) {
+        printk("ds18b20: failed to get GPIO\n");
+        return result;
+    }
   
     dev = MKDEV(ds18b20_major, ds18b20_minor);  
   

@@ -1,6 +1,6 @@
 obj-m = ds18b20.o
 
-KDIR = ../../linux
+KDIR = ../../linux-rpi-5.4.y
 CROSS = ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf-
 
 all:
