@@ -270,7 +270,7 @@ fail_malloc:
 /* Remove device */
 static void __exit ds18b20_dev_exit(void)  
 {  
-    gpio_release(DQ_IO);
+    gpio_free(DQ_IO);
     cdev_del(&ds18b20_devp->cdev);  /* Delete cdeve */  
     kfree(ds18b20_devp);    /* Free memory */  
     unregister_chrdev_region(MKDEV(ds18b20_major, 0), ds18b20_nr_devs); /* Free device number */  
